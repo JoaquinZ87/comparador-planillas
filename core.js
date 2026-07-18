@@ -25,7 +25,7 @@
   function parseNumberSmart(v) {
     if (typeof v === 'number' && isFinite(v)) return v;
     if (v instanceof Date || v === null || v === undefined) return null;
-    let s = String(v).trim().replace(/[$\s ]/g, '');
+    let s = String(v).trim().replace(/[$\s ]/g, '');
     if (!s) return null;
     let neg = false;
     if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
@@ -68,11 +68,64 @@
     return null;
   }
 
+  // ---------- transformaciones por par de columnas ----------
+  // "Comparar como": normalización aplicada a ambos lados antes de comparar
+  // y de armar la clave de apareo.
+  const TRANSFORMS = [
+    { id: 'auto',     label: 'Automático',                            short: '' },
+    { id: 'ultimos8', label: 'Últimos 8 dígitos (nro. comprobante)',  short: 'últ. 8 díg.' },
+    { id: 'digitos',  label: 'Sólo dígitos (CUIT, códigos)',          short: 'dígitos' },
+    { id: 'numero',   label: 'Como número',                           short: 'número' },
+    { id: 'fecha',    label: 'Como fecha',                            short: 'fecha' },
+    { id: 'texto',    label: 'Como texto',                            short: 'texto' },
+  ];
+
+  function transformValue(v, t) {
+    if (isBlank(v)) return '';
+    switch (t) {
+      case 'ultimos8': {
+        // últimos 8 dígitos sin ceros a la izquierda: estándar AFIP de numeración.
+        // Hace comparables 1234, "0005-00001234" y 50000001234 (PV+relleno variable).
+        const dg = String(v).replace(/\D/g, '');
+        return dg ? String(parseInt(dg.slice(-8), 10)) : normText(v);
+      }
+      case 'digitos': {
+        const dg = String(v).replace(/\D/g, '');
+        return dg || normText(v);
+      }
+      case 'numero': {
+        const n = parseNumberSmart(v);
+        return n === null ? normText(v) : String(n);
+      }
+      case 'fecha': {
+        const d = parseDateSmart(v);
+        return d || normText(v);
+      }
+      case 'texto':
+        return normText(v);
+      default:
+        return keyPart(v);
+    }
+  }
+
   // ---------- comparación de valores ----------
-  function compareValues(a, b, tol) {
+  function compareValues(a, b, tol, transform) {
     tol = tol === undefined ? 0.01 : tol;
     const aB = isBlank(a), bB = isBlank(b);
     if (aB && bB) return { equal: true, kind: 'empty' };
+
+    if (transform === 'numero') {
+      // vacío cuenta como 0, igual que en el modo automático
+      const na = aB ? 0 : parseNumberSmart(a), nb = bB ? 0 : parseNumberSmart(b);
+      if (na !== null && nb !== null) return { equal: Math.abs(na - nb) <= tol, kind: 'number' };
+      return { equal: normText(aB ? '' : a) === normText(bB ? '' : b), kind: 'text' };
+    }
+    if (transform && transform !== 'auto') {
+      if (aB !== bB) return { equal: false, kind: transform };
+      return { equal: transformValue(a, transform) === transformValue(b, transform), kind: transform };
+    }
+
+    // modo automático
     if (aB !== bB) {
       // vacío vs 0 se considera igual (ARCA deja en blanco lo que contabilidad pone en 0)
       const n = parseNumberSmart(aB ? b : a);
@@ -90,8 +143,9 @@
   }
 
   // Valor canónico de una celda para armar la clave de apareo de filas
-  function keyPart(v) {
+  function keyPart(v, transform) {
     if (isBlank(v)) return '';
+    if (transform && transform !== 'auto') return transformValue(v, transform);
     const d = parseDateSmart(v);
     if (d) return d;
     const n = parseNumberSmart(v);
@@ -147,61 +201,32 @@
     return { cols: cols, data: data };
   }
 
-  // Agrega una columna calculada "Nro. Comprobante (norm.)" con los últimos
-  // 8 dígitos del número (estándar AFIP). Esto hace comparables:
-  //   ARCA "Número Desde" = 1234  vs  conta "nro" = 50000001234 (PV+relleno variable)
-  function addVirtualNroComp(table) {
-    const findCol = function (regexes) {
-      for (let i = 0; i < table.cols.length; i++) {
-        const n = normHeader(table.cols[i].name);
-        for (let j = 0; j < regexes.length; j++) if (regexes[j].test(n)) return i;
-      }
-      return -1;
-    };
-    const idxNum = findCol([/^numerodesde$/, /^nrodesde$/, /^numerocomprobante$/,
-      /^nrocomprobante$/, /^nrocbte$/, /^numero$/, /^nro$/, /^comprobantenro$/]);
-    if (idxNum < 0) return false;
-    // va primera para que encabece el mapeo y el resultado
-    table.cols.unshift({ index: -1, name: 'Nro. Comprobante (norm.)', virtual: true });
-    table.data.forEach(function (row) {
-      const v = row.values[idxNum];
-      let out = null;
-      if (!isBlank(v)) {
-        const dg = String(v).replace(/\D/g, '');
-        if (dg) out = parseInt(dg.slice(-8), 10);
-      }
-      row.values.unshift(out);
-    });
-    return true;
-  }
-
   // ---------- mapeo automático ----------
   const SYNONYM_GROUPS = [
-    ['fecha', 'fechaemision', 'fechadeemision', 'fechacomprobante', 'fchemision', 'fechacbte'],
-    ['tipo', 'comprobante', 'comprobant', 'tipocomprobante', 'tipodecomprobante', 'tipocbte', 'tipodoc'],
-    ['cuit', 'nrodocemisor', 'cuitemisor', 'nrodocumentoemisor', 'cuitproveedor'],
-    ['denominacionemisor', 'razonsoci', 'razonsocial', 'proveedor', 'denominacion', 'razsoc', 'nombreproveedor'],
-    ['nrocomprobantenorm'],
-    ['netograviva21', 'neto21', 'netogravado21'],
-    ['netograviva105', 'neto105', 'netogravado105'],
-    ['netograviva27', 'neto27', 'netogravado27'],
-    ['netograviva25', 'neto25', 'netogravado25'],
-    ['netograviva5', 'neto5', 'netogravado5'],
-    ['imptotal', 'total', 'importetotal', 'totalcomprobante', 'imptotaloperacion'],
-    ['netogravadototal', 'netogravado', 'totalneto', 'netototal'],
-    ['totaliva', 'totiva', 'ivatotal', 'imptotaliva'],
-    ['netonogravado', 'nogravado', 'impnetonogravado'],
-    ['opexentas', 'exento', 'exentas', 'impopexentas'],
-    ['otrostributos', 'otros', 'impotrostributos', 'percepciones'],
+    { names: ['fecha', 'fechaemision', 'fechadeemision', 'fechacomprobante', 'fchemision', 'fechacbte'] },
+    { names: ['tipo', 'comprobante', 'comprobant', 'tipocomprobante', 'tipodecomprobante', 'tipocbte', 'tipodoc'] },
+    { names: ['cuit', 'nrodocemisor', 'cuitemisor', 'nrodocumentoemisor', 'cuitproveedor'], key: true },
+    { names: ['denominacionemisor', 'razonsoci', 'razonsocial', 'proveedor', 'denominacion', 'razsoc', 'nombreproveedor'] },
+    { names: ['nro', 'numero', 'numerodesde', 'nrodesde', 'nrocomprobante', 'numerocomprobante', 'nrocbte', 'comprobantenro', 'nrocomp'], key: true, transform: 'ultimos8' },
+    { names: ['netograviva21', 'neto21', 'netogravado21'] },
+    { names: ['netograviva105', 'neto105', 'netogravado105'] },
+    { names: ['netograviva27', 'neto27', 'netogravado27'] },
+    { names: ['netograviva25', 'neto25', 'netogravado25'] },
+    { names: ['netograviva5', 'neto5', 'netogravado5'] },
+    { names: ['imptotal', 'total', 'importetotal', 'totalcomprobante', 'imptotaloperacion'] },
+    { names: ['netogravadototal', 'netogravado', 'totalneto', 'netototal'] },
+    { names: ['totaliva', 'totiva', 'ivatotal', 'imptotaliva'] },
+    { names: ['netonogravado', 'nogravado', 'impnetonogravado'] },
+    { names: ['opexentas', 'exento', 'exentas', 'impopexentas'] },
+    { names: ['otrostributos', 'otros', 'impotrostributos', 'percepciones'] },
   ];
-  function canonHeader(name) {
+  function groupOf(name) {
     const n = normHeader(name);
     for (let g = 0; g < SYNONYM_GROUPS.length; g++) {
-      if (SYNONYM_GROUPS[g].indexOf(n) >= 0) return 'g' + g;
+      if (SYNONYM_GROUPS[g].names.indexOf(n) >= 0) return SYNONYM_GROUPS[g];
     }
-    return n;
+    return null;
   }
-  const KEY_GROUPS = { g2: true, g4: true }; // cuit + número de comprobante
 
   function bigrams(s) {
     const r = [];
@@ -222,22 +247,22 @@
     return 2 * inter / (A.length + B.length);
   }
 
-  // Devuelve [{ai, bi, isKey}] (índices dentro de cols de cada tabla)
+  // Devuelve [{ai, bi, isKey, transform}] (índices dentro de cols de cada tabla)
   function autoMap(colsA, colsB) {
     const candidates = [];
     colsA.forEach(function (ca, ai) {
-      const na = normHeader(ca.name), canA = canonHeader(ca.name);
+      const na = normHeader(ca.name), gA = groupOf(ca.name);
       colsB.forEach(function (cb, bi) {
-        const nb = normHeader(cb.name), canB = canonHeader(cb.name);
+        const nb = normHeader(cb.name), gB = groupOf(cb.name);
         let score = 0;
+        const sameGroup = gA !== null && gA === gB;
         if (na === nb) score = 3;
-        else if (canA === canB) score = 2.5;
+        else if (sameGroup) score = 2.5;
         else {
           const d = diceSim(na, nb);
           if (d >= 0.55) score = d * 2;
         }
-        if (ca.virtual || cb.virtual) score += 0.1;
-        if (score > 0) candidates.push({ ai: ai, bi: bi, score: score, canon: canA === canB ? canA : null });
+        if (score > 0) candidates.push({ ai: ai, bi: bi, score: score, group: sameGroup || na === nb ? (gA || null) : null });
       });
     });
     candidates.sort(function (x, y) { return y.score - x.score || x.ai - y.ai; });
@@ -245,9 +270,48 @@
     candidates.forEach(function (c) {
       if (usedA[c.ai] || usedB[c.bi]) return;
       usedA[c.ai] = usedB[c.bi] = true;
-      mapping.push({ ai: c.ai, bi: c.bi, isKey: !!(c.canon && KEY_GROUPS[c.canon]) });
+      mapping.push({
+        ai: c.ai, bi: c.bi,
+        isKey: !!(c.group && c.group.key),
+        transform: (c.group && c.group.transform) || 'auto',
+      });
     });
     mapping.sort(function (x, y) { return x.ai - y.ai; });
+    return mapping;
+  }
+
+  // Sugerencia basada en datos, para planillas con encabezados desconocidos:
+  // si dos columnas mapeadas parecen identificadores enteros y sus valores
+  // recién coinciden al quedarse con los últimos 8 dígitos, propone 'ultimos8'.
+  function suggestTransforms(tableA, tableB, mapping) {
+    const colVals = function (t, i) {
+      return t.data.map(function (r) { return r.values[i]; }).filter(function (v) { return !isBlank(v); });
+    };
+    const idLike = function (vals) {
+      let ok = 0;
+      vals.forEach(function (v) {
+        if (typeof v === 'number' && Number.isInteger(v) && Math.abs(v) >= 1000) { ok++; return; }
+        const s = String(v).trim();
+        if (/^[\d\-\/ ]+$/.test(s) && !/[.,]/.test(s) && s.replace(/\D/g, '').length >= 4) ok++;
+      });
+      return ok >= vals.length * 0.8;
+    };
+    const overlapRate = function (A, B) {
+      const sa = new Set(A), sb = new Set(B);
+      let inter = 0;
+      sa.forEach(function (v) { if (sb.has(v)) inter++; });
+      return inter / Math.min(sa.size, sb.size);
+    };
+    mapping.forEach(function (m) {
+      if (m.transform && m.transform !== 'auto') return;
+      const va = colVals(tableA, m.ai), vb = colVals(tableB, m.bi);
+      if (va.length < 5 || vb.length < 5) return;
+      if (!idLike(va) || !idLike(vb)) return;
+      const raw = overlapRate(va.map(function (v) { return keyPart(v); }), vb.map(function (v) { return keyPart(v); }));
+      const t8 = overlapRate(va.map(function (v) { return transformValue(v, 'ultimos8'); }),
+                             vb.map(function (v) { return transformValue(v, 'ultimos8'); }));
+      if (t8 > raw + 0.3 && t8 > 0.4) m.transform = 'ultimos8';
+    });
     return mapping;
   }
 
@@ -259,7 +323,7 @@
     const useRowOrder = keyPairs.length === 0;
     const buildKey = function (row, side) {
       return keyPairs.map(function (m) {
-        return keyPart(row.values[side === 'A' ? m.ai : m.bi]);
+        return keyPart(row.values[side === 'A' ? m.ai : m.bi], m.transform);
       }).join('|');
     };
     const emptyKey = function (k) { return k.replace(/\|/g, '') === ''; };
@@ -296,7 +360,7 @@
     const rows = pairs.map(function (p) {
       const cells = mapping.map(function (m) {
         const a = p.ra.values[m.ai], b = p.rb.values[m.bi];
-        const res = compareValues(a, b, tol);
+        const res = compareValues(a, b, tol, m.transform);
         return { a: a, b: b, equal: res.equal, kind: res.kind };
       });
       return {
@@ -327,8 +391,9 @@
     normHeader: normHeader, normText: normText, isBlank: isBlank,
     parseNumberSmart: parseNumberSmart, parseDateSmart: parseDateSmart,
     compareValues: compareValues, keyPart: keyPart,
+    TRANSFORMS: TRANSFORMS, transformValue: transformValue,
     detectHeaderRow: detectHeaderRow, extractTable: extractTable,
-    addVirtualNroComp: addVirtualNroComp, autoMap: autoMap, canonHeader: canonHeader,
+    autoMap: autoMap, suggestTransforms: suggestTransforms, groupOf: groupOf,
     compareTables: compareTables, formatValue: formatValue, diceSim: diceSim
   };
 

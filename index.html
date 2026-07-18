@@ -36,7 +36,7 @@
   table.map th{color:var(--gris);font-weight:600;font-size:12px;border-bottom:1px solid var(--borde)}
   table.map select{padding:4px 6px;border:1px solid var(--borde);border-radius:6px;font-size:13px;max-width:280px;background:#fff}
   table.map select.mapped{border-color:#8ab4f8;background:#f0f6ff}
-  .badge-calc{background:#e8eaf6;color:#3949ab;border-radius:4px;font-size:10px;padding:1px 5px;margin-left:6px;vertical-align:middle}
+  .chip-t{display:inline-block;background:#e8eaf6;color:#3949ab;border-radius:4px;font-size:9px;padding:0 4px;vertical-align:1px}
   .chips{margin-top:12px;font-size:12px;color:var(--gris)}
   .chips .chip{display:inline-block;background:#f1f3f4;border-radius:12px;padding:2px 10px;margin:2px 3px;color:#555}
   .barra{display:flex;gap:14px;align-items:center;margin-top:16px;flex-wrap:wrap}
@@ -123,11 +123,12 @@
     <button id="btnAuto" style="font-size:12px;padding:3px 10px;margin-left:8px">Volver a la propuesta automática</button>
   </div>
   <table class="map">
-    <thead><tr><th>Columna de A</th><th></th><th>Se compara con (columna de B)</th><th title="Las columnas clave identifican cada fila para aparearla con la de la otra planilla">🔑 Clave</th></tr></thead>
+    <thead><tr><th>Columna de A</th><th></th><th>Se compara con (columna de B)</th><th title="Normalización aplicada a ambos lados antes de comparar">Comparar como</th><th title="Las columnas clave identifican cada fila para aparearla con la de la otra planilla">🔑 Clave</th></tr></thead>
     <tbody id="mapBody"></tbody>
   </table>
   <div class="chips" id="chipsB"></div>
-  <div class="nota" style="margin-top:8px">🔑 Las columnas <b>clave</b> (ej.: CUIT + Nro. de comprobante) se usan para aparear las filas de ambas planillas. Si no marcás ninguna, se compara fila contra fila en orden.</div>
+  <div class="nota" style="margin-top:8px">🔑 Las columnas <b>clave</b> (ej.: CUIT + Nro. de comprobante) se usan para aparear las filas de ambas planillas. Si no marcás ninguna, se compara fila contra fila en orden.<br>
+  ⚙ <b>Comparar como</b> normaliza ambos lados antes de comparar. Ej.: <i>Últimos 8 dígitos</i> hace coincidir el nro. de comprobante aunque una planilla guarde <code>1234</code> y la otra <code>0005-00001234</code> o <code>50000001234</code> (punto de venta pegado adelante).</div>
   <div class="barra">
     <button class="primario" id="btnComparar">Comparar ▶</button>
     <label class="nota">Tolerancia numérica $ <input type="number" id="tol" value="0.01" step="0.01" min="0" style="width:70px;padding:4px;border:1px solid var(--borde);border-radius:4px"></label>
@@ -212,7 +213,6 @@ function loadSheet(side){
 function rebuildTable(side){
   const s = state[side];
   s.table = C.extractTable(s.rows, s.headerIdx);
-  C.addVirtualNroComp(s.table);
   $('dim'+side).textContent = s.table.data.length + ' filas × ' + s.table.cols.length + ' columnas';
   if (state.A && state.A.table && state.B && state.B.table) initMapping();
 }
@@ -227,7 +227,8 @@ function mappingSignature(){
 function saveMapping(){
   try {
     const data = state.mapping.map(m => ({
-      a: state.A.table.cols[m.ai].name, b: state.B.table.cols[m.bi].name, k: !!m.isKey }));
+      a: state.A.table.cols[m.ai].name, b: state.B.table.cols[m.bi].name,
+      k: !!m.isKey, t: m.transform || 'auto' }));
     localStorage.setItem(mappingSignature(), JSON.stringify(data));
   } catch(e){}
 }
@@ -239,17 +240,22 @@ function loadSavedMapping(){
     data.forEach(d => {
       const ai = state.A.table.cols.findIndex(c => c.name === d.a);
       const bi = state.B.table.cols.findIndex(c => c.name === d.b);
-      if (ai >= 0 && bi >= 0) out.push({ ai, bi, isKey: !!d.k });
+      if (ai >= 0 && bi >= 0) out.push({ ai, bi, isKey: !!d.k, transform: d.t || 'auto' });
     });
     return out.length ? out : null;
   } catch(e){ return null; }
 }
 
+function proponerAuto(){
+  const m = C.autoMap(state.A.table.cols, state.B.table.cols);
+  C.suggestTransforms(state.A.table, state.B.table, m);
+  return m;
+}
+
 function initMapping(){
-  const auto = C.autoMap(state.A.table.cols, state.B.table.cols);
   const saved = loadSavedMapping();
   if (saved){ state.mapping = saved; state.restored = true; }
-  else { state.mapping = auto.map(m => ({...m})); state.restored = false; }
+  else { state.mapping = proponerAuto(); state.restored = false; }
   $('avisoRestaurado').hidden = !state.restored;
   $('mapSection').hidden = false;
   renderMapping();
@@ -257,7 +263,7 @@ function initMapping(){
 }
 
 function usarAuto(){
-  state.mapping = C.autoMap(state.A.table.cols, state.B.table.cols).map(m => ({...m}));
+  state.mapping = proponerAuto();
   state.restored = false;
   $('avisoRestaurado').hidden = true;
   renderMapping(); maybeRecompare();
@@ -271,16 +277,20 @@ function renderMapping(){
     const m = state.mapping.find(x => x.ai === ai);
     const opts = ['<option value="-1">— no comparar —</option>'].concat(
       colsB.map((cb, bi) =>
-        `<option value="${bi}" ${m && m.bi === bi ? 'selected':''}>${esc(cb.name)}${cb.virtual?' (calculada)':''}</option>`));
+        `<option value="${bi}" ${m && m.bi === bi ? 'selected':''}>${esc(cb.name)}</option>`));
+    const tOpts = C.TRANSFORMS.map(t =>
+      `<option value="${t.id}" ${m && (m.transform||'auto') === t.id ? 'selected':''}>${esc(t.label)}</option>`);
     return `<tr>
-      <td>${esc(ca.name)}${ca.virtual?'<span class="badge-calc">calculada</span>':''}</td>
+      <td>${esc(ca.name)}</td>
       <td style="color:#999">↔</td>
       <td><select data-ai="${ai}" class="${m?'mapped':''}">${opts.join('')}</select></td>
+      <td>${m ? `<select data-transform="${ai}" style="max-width:220px">${tOpts.join('')}</select>` : ''}</td>
       <td style="text-align:center"><input type="checkbox" data-key="${ai}" ${m&&m.isKey?'checked':''} ${m?'':'disabled'}></td>
     </tr>`;
   });
   $('mapBody').innerHTML = rows.join('');
-  $('mapBody').querySelectorAll('select').forEach(sel => sel.addEventListener('change', onMapChange));
+  $('mapBody').querySelectorAll('select[data-ai]').forEach(sel => sel.addEventListener('change', onMapChange));
+  $('mapBody').querySelectorAll('select[data-transform]').forEach(sel => sel.addEventListener('change', onTransformChange));
   $('mapBody').querySelectorAll('input[data-key]').forEach(ch => ch.addEventListener('change', onKeyChange));
   const unused = colsB.filter((c, bi) => !state.mapping.some(m => m.bi === bi));
   $('chipsB').innerHTML = unused.length
@@ -292,11 +302,18 @@ function renderMapping(){
 function onMapChange(e){
   const ai = +e.target.dataset.ai, bi = +e.target.value;
   const prev = state.mapping.find(x => x.ai === ai);
-  const wasKey = prev ? prev.isKey : false;
   state.mapping = state.mapping.filter(m => m.ai !== ai && (bi < 0 || m.bi !== bi));
-  if (bi >= 0) state.mapping.push({ ai, bi, isKey: wasKey });
+  if (bi >= 0) state.mapping.push({ ai, bi,
+    isKey: prev ? prev.isKey : false,
+    transform: prev ? prev.transform : 'auto' });
   state.mapping.sort((a,b) => a.ai - b.ai);
   renderMapping(); maybeRecompare();
+}
+function onTransformChange(e){
+  const ai = +e.target.dataset.transform;
+  const m = state.mapping.find(x => x.ai === ai);
+  if (m) m.transform = e.target.value;
+  maybeRecompare();
 }
 function onKeyChange(e){
   const ai = +e.target.dataset.key;
@@ -323,8 +340,15 @@ function comparar(){
   $('resultSection').hidden = false;
 }
 
+// columnas clave primero (el nro. de comprobante encabeza el resultado)
+function displayOrder(){
+  const idx = state.mapping.map((m, ci) => ci);
+  return idx.filter(ci => state.mapping[ci].isKey).concat(idx.filter(ci => !state.mapping[ci].isKey));
+}
+
 function renderResults(res){
   const colsA = state.A.table.cols, colsB = state.B.table.cols;
+  const orden = displayOrder();
   const nOk = res.rows.filter(r => r.diffs === 0).length;
   const nDif = res.rows.length - nOk;
   $('cards').innerHTML = `
@@ -335,26 +359,37 @@ function renderResults(res){
     <div class="card solob"><div class="n">${res.onlyB.length}</div><div class="l">sólo en B</div></div>`;
   $('notaOrden').hidden = !res.useRowOrder;
 
-  const ths = state.mapping.map((m, ci) => {
+  const ths = orden.map(ci => {
+    const m = state.mapping[ci];
     const a = colsA[m.ai].name, b = colsB[m.bi].name;
+    const t = C.TRANSFORMS.find(t => t.id === (m.transform||'auto'));
+    const chip = t && t.short ? ` <span class="chip-t">${esc(t.short)}</span>` : '';
     const badge = res.colDiffs[ci] ? `<span class="bd">${res.colDiffs[ci]}</span>` : '';
-    return `<th>${m.isKey ? '🔑 ' : ''}<span class="hA">${esc(a)}</span>${badge}${
+    return `<th>${m.isKey ? '🔑 ' : ''}<span class="hA">${esc(a)}</span>${chip}${badge}${
       C.normHeader(a) !== C.normHeader(b) ? `<div class="hB">${esc(b)}</div>` : ''}</th>`;
   });
   $('resHead').innerHTML = `<tr><th>Fila A</th><th>Fila B</th>${ths.join('')}</tr>`;
 
   const body = res.rows.map(r => {
-    const tds = r.cells.map(c => {
+    const tds = orden.map(ci => {
+      const c = r.cells[ci], m = state.mapping[ci];
       if (c.kind === 'empty') return '<td class="c-empty">—</td>';
-      if (c.equal) return `<td class="c-eq">${esc(C.formatValue(c.a) || C.formatValue(c.b))}</td>`;
+      if (c.equal) {
+        // con transformación de dígitos se muestra el valor canónico (más legible)
+        const t = m.transform || 'auto';
+        const disp = (t === 'ultimos8' || t === 'digitos')
+          ? C.transformValue(C.isBlank(c.a) ? c.b : c.a, t)
+          : (C.formatValue(c.a) || C.formatValue(c.b));
+        return `<td class="c-eq">${esc(disp)}</td>`;
+      }
       return `<td class="c-diff"><span class="tagA">A</span>${esc(C.formatValue(c.a)) || '<i>vacío</i>'}<br><span class="tagB">B</span>${esc(C.formatValue(c.b)) || '<i>vacío</i>'}</td>`;
     });
     return `<tr class="${r.diffs ? 'fila-dif' : 'fila-ok'}"><td class="fila">${r.ra.excelRow}</td><td class="fila">${r.rb.excelRow}</td>${tds.join('')}</tr>`;
   });
   $('resBody').innerHTML = body.join('');
 
-  renderSolo('A', res.onlyA, colsA, state.mapping.map(m => m.ai));
-  renderSolo('B', res.onlyB, colsB, state.mapping.map(m => m.bi));
+  renderSolo('A', res.onlyA, colsA, orden.map(ci => state.mapping[ci].ai));
+  renderSolo('B', res.onlyB, colsB, orden.map(ci => state.mapping[ci].bi));
 }
 
 function renderSolo(side, rows, cols, idxs){
@@ -389,9 +424,11 @@ $('btnXlsx').addEventListener('click', () => {
   const colsA = state.A.table.cols, colsB = state.B.table.cols;
   const wb = XLSX.utils.book_new();
 
+  const orden = displayOrder();
   const difs = [['Fila A','Fila B','Columna A','Columna B','Valor A','Valor B']];
   state.result.rows.forEach(r => {
-    r.cells.forEach((c, ci) => {
+    orden.forEach(ci => {
+      const c = r.cells[ci];
       if (!c.equal) difs.push([
         r.ra.excelRow, r.rb.excelRow,
         colsA[state.mapping[ci].ai].name, colsB[state.mapping[ci].bi].name,
@@ -407,9 +444,9 @@ $('btnXlsx').addEventListener('click', () => {
     return XLSX.utils.aoa_to_sheet(aoa, {cellDates:true});
   };
   if (state.result.onlyA.length)
-    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyA, colsA, state.mapping.map(m => m.ai)), 'Sólo en A');
+    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyA, colsA, orden.map(ci => state.mapping[ci].ai)), 'Sólo en A');
   if (state.result.onlyB.length)
-    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyB, colsB, state.mapping.map(m => m.bi)), 'Sólo en B');
+    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyB, colsB, orden.map(ci => state.mapping[ci].bi)), 'Sólo en B');
 
   XLSX.writeFile(wb, 'diferencias.xlsx', { cellDates:true });
 });

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Comparador de Planillas — ARCA vs Contabilidad</title>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
 <style>
   :root{
     --verde-bg:#e6f4ea; --verde:#137333;
@@ -419,13 +419,109 @@ function exportVal(v){
   if (n !== null) return n;
   return String(v);
 }
+// estilos que replican la paleta de la interfaz
+const XS = {
+  titulo:   { font:{ bold:true, sz:14 } },
+  head:     { font:{ bold:true, sz:10 }, fill:{ patternType:'solid', fgColor:{ rgb:'F1F3F4' } },
+              border:{ bottom:{ style:'medium', color:{ rgb:'DADCE0' } } },
+              alignment:{ vertical:'bottom', wrapText:true } },
+  fila:     { font:{ sz:9, color:{ rgb:'5F6368' } } },
+  eq:       { fill:{ patternType:'solid', fgColor:{ rgb:'E6F4EA' } }, font:{ sz:10, color:{ rgb:'137333' } } },
+  diff:     { fill:{ patternType:'solid', fgColor:{ rgb:'FCE8E6' } }, font:{ sz:10, color:{ rgb:'C5221F' } },
+              alignment:{ wrapText:true, vertical:'center' } },
+  empty:    { fill:{ patternType:'solid', fgColor:{ rgb:'FAFAFA' } }, font:{ sz:10, color:{ rgb:'BBBBBB' } },
+              alignment:{ horizontal:'center' } },
+  cardTot:  { fill:{ patternType:'solid', fgColor:{ rgb:'EEF1F5' } }, font:{ bold:true, color:{ rgb:'333333' } } },
+  cardOk:   { fill:{ patternType:'solid', fgColor:{ rgb:'E6F4EA' } }, font:{ bold:true, color:{ rgb:'137333' } } },
+  cardDif:  { fill:{ patternType:'solid', fgColor:{ rgb:'FCE8E6' } }, font:{ bold:true, color:{ rgb:'C5221F' } } },
+  cardSolo: { fill:{ patternType:'solid', fgColor:{ rgb:'FEF7E0' } }, font:{ bold:true, color:{ rgb:'B06000' } } },
+  soloHead: { font:{ bold:true, sz:10, color:{ rgb:'B06000' } }, fill:{ patternType:'solid', fgColor:{ rgb:'FEF7E0' } } },
+};
+
+function setStyle(ws, r, c, style, z){
+  const addr = XLSX.utils.encode_cell({ r, c });
+  if (!ws[addr]) return;
+  ws[addr].s = style;
+  if (z) ws[addr].z = z;
+  else if (ws[addr].v instanceof Date) ws[addr].z = 'dd/mm/yyyy';
+  else if (typeof ws[addr].v === 'number' && !Number.isInteger(ws[addr].v)) ws[addr].z = '#,##0.00';
+}
+function autoWidths(aoa){
+  const w = [];
+  aoa.forEach(row => row.forEach((v, ci) => {
+    const s = v == null ? '' : (v instanceof Date ? '00/00/0000' : String(v));
+    const len = s.split('\n').reduce((m, x) => Math.max(m, x.length), 0);
+    w[ci] = Math.max(w[ci] || 6, Math.min(len + 2, 34));
+  }));
+  return w.map(wch => ({ wch }));
+}
+
 $('btnXlsx').addEventListener('click', () => {
   if (!state.result) return;
   const colsA = state.A.table.cols, colsB = state.B.table.cols;
-  const wb = XLSX.utils.book_new();
-
   const orden = displayOrder();
-  const difs = [['Fila A','Fila B','Columna A','Columna B','Valor A','Valor B']];
+  const wb = XLSX.utils.book_new();
+  const nOk = state.result.rows.filter(r => r.diffs === 0).length;
+  const nDif = state.result.rows.length - nOk;
+
+  // --- hoja Resumen (las "tarjetas" de la UI) ---
+  const resAoa = [
+    ['Comparador de Planillas'], [],
+    ['Planilla A', state.A.fileName],
+    ['Planilla B', state.B.fileName], [],
+    ['Filas apareadas', state.result.rows.length],
+    ['Sin diferencias', nOk],
+    ['Con diferencias', nDif],
+    ['Sólo en A', state.result.onlyA.length],
+    ['Sólo en B', state.result.onlyB.length],
+  ];
+  const wsRes = XLSX.utils.aoa_to_sheet(resAoa);
+  setStyle(wsRes, 0, 0, XS.titulo);
+  [[5, XS.cardTot], [6, XS.cardOk], [7, XS.cardDif], [8, XS.cardSolo], [9, XS.cardSolo]]
+    .forEach(([r, st]) => { setStyle(wsRes, r, 0, st); setStyle(wsRes, r, 1, st); });
+  wsRes['!cols'] = [{ wch: 18 }, { wch: 50 }];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen');
+
+  // --- hoja Comparación (la tabla verde/roja de la UI) ---
+  const header = ['Fila A', 'Fila B'].concat(orden.map(ci => {
+    const m = state.mapping[ci];
+    const a = colsA[m.ai].name, b = colsB[m.bi].name;
+    const t = C.TRANSFORMS.find(t => t.id === (m.transform || 'auto'));
+    return (m.isKey ? '🔑 ' : '') + a +
+      (C.normHeader(a) !== C.normHeader(b) ? ' ↔ ' + b : '') +
+      (t && t.short ? ' [' + t.short + ']' : '');
+  }));
+  const compAoa = [header];
+  state.result.rows.forEach(r => {
+    compAoa.push([r.ra.excelRow, r.rb.excelRow].concat(orden.map(ci => {
+      const c = r.cells[ci], t = state.mapping[ci].transform || 'auto';
+      if (c.kind === 'empty') return '—';
+      if (c.equal) {
+        if (t === 'ultimos8' || t === 'digitos') {
+          const canon = C.transformValue(C.isBlank(c.a) ? c.b : c.a, t);
+          return /^\d+$/.test(canon) ? parseInt(canon, 10) : canon;
+        }
+        return exportVal(C.isBlank(c.a) ? c.b : c.a);
+      }
+      return 'A: ' + (C.formatValue(c.a) || 'vacío') + '\nB: ' + (C.formatValue(c.b) || 'vacío');
+    })));
+  });
+  const wsComp = XLSX.utils.aoa_to_sheet(compAoa, { cellDates: true });
+  header.forEach((_, c) => setStyle(wsComp, 0, c, XS.head));
+  state.result.rows.forEach((r, i) => {
+    setStyle(wsComp, i + 1, 0, XS.fila);
+    setStyle(wsComp, i + 1, 1, XS.fila);
+    orden.forEach((ci, j) => {
+      const c = r.cells[ci];
+      setStyle(wsComp, i + 1, j + 2, c.kind === 'empty' ? XS.empty : c.equal ? XS.eq : XS.diff);
+    });
+  });
+  wsComp['!cols'] = autoWidths(compAoa);
+  wsComp['!rows'] = [{ hpt: 24 }].concat(state.result.rows.map(r => ({ hpt: r.diffs ? 26 : 15 })));
+  XLSX.utils.book_append_sheet(wb, wsComp, 'Comparación');
+
+  // --- hoja Diferencias (lista filtrable) ---
+  const difs = [['Fila A', 'Fila B', 'Columna A', 'Columna B', 'Valor A', 'Valor B']];
   state.result.rows.forEach(r => {
     orden.forEach(ci => {
       const c = r.cells[ci];
@@ -436,19 +532,28 @@ $('btnXlsx').addEventListener('click', () => {
       ]);
     });
   });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(difs, {cellDates:true}), 'Diferencias');
+  const wsDif = XLSX.utils.aoa_to_sheet(difs, { cellDates: true });
+  difs[0].forEach((_, c) => setStyle(wsDif, 0, c, XS.head));
+  wsDif['!cols'] = autoWidths(difs);
+  XLSX.utils.book_append_sheet(wb, wsDif, 'Diferencias');
 
+  // --- hojas Sólo en A / Sólo en B (ámbar, como la UI) ---
   const soloSheet = (rows, cols, idxs) => {
     const aoa = [['Fila'].concat(idxs.map(i => cols[i].name))];
     rows.forEach(r => aoa.push([r.excelRow].concat(idxs.map(i => exportVal(r.values[i])))));
-    return XLSX.utils.aoa_to_sheet(aoa, {cellDates:true});
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+    aoa[0].forEach((_, c) => setStyle(ws, 0, c, XS.soloHead));
+    for (let r = 1; r < aoa.length; r++) for (let c = 0; c < aoa[0].length; c++)
+      setStyle(ws, r, c, { font: { sz: 10 } });
+    ws['!cols'] = autoWidths(aoa);
+    return ws;
   };
   if (state.result.onlyA.length)
     XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyA, colsA, orden.map(ci => state.mapping[ci].ai)), 'Sólo en A');
   if (state.result.onlyB.length)
     XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyB, colsB, orden.map(ci => state.mapping[ci].bi)), 'Sólo en B');
 
-  XLSX.writeFile(wb, 'diferencias.xlsx', { cellDates:true });
+  XLSX.writeFile(wb, 'comparacion.xlsx', { cellDates: true });
 });
 
 // expuesto para pruebas automatizadas

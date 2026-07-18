@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comparador de Planillas — ARCA vs Contabilidad</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --verde-bg:#e6f4ea; --verde:#137333;
+    --rojo-bg:#fce8e6; --rojo:#c5221f;
+    --ambar-bg:#fef7e0; --ambar:#b06000;
+    --azul:#1a5cb0; --gris:#5f6368; --borde:#dadce0;
+  }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;background:#f6f8fa;color:#202124}
+  header{background:#fff;border-bottom:1px solid var(--borde);padding:14px 24px}
+  header h1{margin:0;font-size:20px}
+  header p{margin:4px 0 0;color:var(--gris);font-size:13px}
+  main{max-width:1400px;margin:0 auto;padding:18px 24px 60px}
+  section{background:#fff;border:1px solid var(--borde);border-radius:10px;padding:18px;margin-bottom:18px}
+  h2{font-size:15px;margin:0 0 12px;color:#333}
+  h2 .paso{display:inline-block;background:var(--azul);color:#fff;border-radius:50%;width:22px;height:22px;text-align:center;line-height:22px;font-size:12px;margin-right:8px}
+  .uploads{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.uploads{grid-template-columns:1fr}}
+  .drop{border:2px dashed var(--borde);border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--azul);background:#f0f6ff}
+  .drop .tit{font-weight:600;margin-bottom:2px}
+  .drop .sub{color:var(--gris);font-size:12px;margin-bottom:8px}
+  .drop .info{font-size:13px;color:var(--verde);font-weight:500;word-break:break-all}
+  .drop input[type=file]{display:none}
+  .fileopts{display:flex;gap:14px;justify-content:center;align-items:center;margin-top:10px;font-size:12px;color:var(--gris);flex-wrap:wrap}
+  .fileopts select,.fileopts input{font-size:12px;padding:2px 4px;border:1px solid var(--borde);border-radius:4px;max-width:150px}
+  table.map{border-collapse:collapse;width:auto}
+  table.map td,table.map th{padding:5px 10px;font-size:13px;text-align:left}
+  table.map th{color:var(--gris);font-weight:600;font-size:12px;border-bottom:1px solid var(--borde)}
+  table.map select{padding:4px 6px;border:1px solid var(--borde);border-radius:6px;font-size:13px;max-width:280px;background:#fff}
+  table.map select.mapped{border-color:#8ab4f8;background:#f0f6ff}
+  .badge-calc{background:#e8eaf6;color:#3949ab;border-radius:4px;font-size:10px;padding:1px 5px;margin-left:6px;vertical-align:middle}
+  .chips{margin-top:12px;font-size:12px;color:var(--gris)}
+  .chips .chip{display:inline-block;background:#f1f3f4;border-radius:12px;padding:2px 10px;margin:2px 3px;color:#555}
+  .barra{display:flex;gap:14px;align-items:center;margin-top:16px;flex-wrap:wrap}
+  button{font-size:14px;padding:8px 18px;border-radius:8px;border:1px solid var(--borde);background:#fff;cursor:pointer}
+  button:hover{background:#f1f3f4}
+  button.primario{background:var(--azul);border-color:var(--azul);color:#fff;font-weight:600}
+  button.primario:hover{background:#174e96}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .nota{font-size:12px;color:var(--gris)}
+  .aviso{background:#fef7e0;border:1px solid #f6e3a1;border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:12px}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .card{border-radius:10px;padding:10px 18px;min-width:110px}
+  .card .n{font-size:22px;font-weight:700}
+  .card .l{font-size:12px}
+  .card.total{background:#eef1f5;color:#333}
+  .card.okc{background:var(--verde-bg);color:var(--verde)}
+  .card.difc{background:var(--rojo-bg);color:var(--rojo)}
+  .card.soloa,.card.solob{background:var(--ambar-bg);color:var(--ambar)}
+  .scroll{overflow:auto;max-height:70vh;border:1px solid var(--borde);border-radius:8px}
+  table.res{border-collapse:collapse;font-size:12px;width:max-content;min-width:100%}
+  table.res th{position:sticky;top:0;background:#fff;z-index:2;border-bottom:2px solid var(--borde);padding:6px 8px;text-align:left;vertical-align:bottom}
+  table.res th .hA{font-weight:700}
+  table.res th .hB{font-weight:400;color:var(--gris);font-size:11px}
+  table.res th .bd{display:inline-block;background:var(--rojo);color:#fff;border-radius:9px;font-size:10px;padding:0 6px;margin-left:4px}
+  table.res td{border-bottom:1px solid #eee;padding:4px 8px;white-space:nowrap;vertical-align:top}
+  td.c-eq{background:var(--verde-bg)}
+  td.c-diff{background:var(--rojo-bg)}
+  td.c-empty{background:#fafafa;color:#bbb;text-align:center}
+  td.fila{color:var(--gris);font-size:11px}
+  .tagA,.tagB{display:inline-block;font-size:9px;font-weight:700;border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:1px}
+  .tagA{background:#d2e3fc;color:#174ea6}
+  .tagB{background:#fde0c8;color:#a05000}
+  body.solo-difs tr.fila-ok{display:none}
+  details{margin-top:14px}
+  details summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ambar)}
+  table.solo{border-collapse:collapse;font-size:12px;margin-top:8px;width:max-content}
+  table.solo th{background:var(--ambar-bg);color:var(--ambar);padding:5px 8px;text-align:left;position:sticky;top:0}
+  table.solo td{border-bottom:1px solid #f0e6c8;padding:4px 8px;white-space:nowrap}
+  .leyenda{font-size:12px;color:var(--gris);margin:8px 0}
+  .leyenda span{display:inline-block;padding:1px 8px;border-radius:4px;margin-right:6px}
+  footer{text-align:center;color:var(--gris);font-size:12px;padding:18px}
+  .ctrl-res{display:flex;gap:18px;align-items:center;margin-bottom:10px;flex-wrap:wrap;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 Comparador de Planillas</h1>
+  <p>Compará "Mis Comprobantes" de ARCA contra tu sistema contable. Los archivos se procesan <b>localmente en tu navegador</b>: no se suben a ningún servidor.</p>
+</header>
+<main>
+
+<section>
+  <h2><span class="paso">1</span>Cargar archivos</h2>
+  <div class="uploads">
+    <div class="drop" id="dropA">
+      <div class="tit">Planilla A</div>
+      <div class="sub">ej.: ARCA — Mis Comprobantes Recibidos (.xlsx, .xls, .csv)</div>
+      <div class="info" id="infoA">Hacé clic o arrastrá el archivo acá</div>
+      <input type="file" id="fileA" accept=".xlsx,.xls,.csv,.XLSX,.XLS,.CSV">
+      <div class="fileopts" id="optsA" hidden>
+        <label>Hoja <select id="sheetA"></select></label>
+        <label>Fila de encabezados <input type="number" id="hdrA" min="1" style="width:55px"></label>
+        <span id="dimA"></span>
+      </div>
+    </div>
+    <div class="drop" id="dropB">
+      <div class="tit">Planilla B</div>
+      <div class="sub">ej.: compras según el sistema contable (.xlsx, .xls, .csv)</div>
+      <div class="info" id="infoB">Hacé clic o arrastrá el archivo acá</div>
+      <input type="file" id="fileB" accept=".xlsx,.xls,.csv,.XLSX,.XLS,.CSV">
+      <div class="fileopts" id="optsB" hidden>
+        <label>Hoja <select id="sheetB"></select></label>
+        <label>Fila de encabezados <input type="number" id="hdrB" min="1" style="width:55px"></label>
+        <span id="dimB"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="mapSection" hidden>
+  <h2><span class="paso">2</span>Mapeo de columnas <span class="nota">— revisá la propuesta y ajustá lo que haga falta</span></h2>
+  <div class="aviso" id="avisoRestaurado" hidden>
+    Se restauró el mapeo que guardaste la última vez para planillas con estas columnas.
+    <button id="btnAuto" style="font-size:12px;padding:3px 10px;margin-left:8px">Volver a la propuesta automática</button>
+  </div>
+  <table class="map">
+    <thead><tr><th>Columna de A</th><th></th><th>Se compara con (columna de B)</th><th title="Las columnas clave identifican cada fila para aparearla con la de la otra planilla">🔑 Clave</th></tr></thead>
+    <tbody id="mapBody"></tbody>
+  </table>
+  <div class="chips" id="chipsB"></div>
+  <div class="nota" style="margin-top:8px">🔑 Las columnas <b>clave</b> (ej.: CUIT + Nro. de comprobante) se usan para aparear las filas de ambas planillas. Si no marcás ninguna, se compara fila contra fila en orden.</div>
+  <div class="barra">
+    <button class="primario" id="btnComparar">Comparar ▶</button>
+    <label class="nota">Tolerancia numérica $ <input type="number" id="tol" value="0.01" step="0.01" min="0" style="width:70px;padding:4px;border:1px solid var(--borde);border-radius:4px"></label>
+    <button id="btnAuto2" style="font-size:13px">Rehacer propuesta automática</button>
+  </div>
+</section>
+
+<section id="resultSection" hidden>
+  <h2><span class="paso">3</span>Resultado</h2>
+  <div class="cards" id="cards"></div>
+  <div class="ctrl-res">
+    <label><input type="checkbox" id="chkSoloDifs"> Mostrar sólo filas con diferencias</label>
+    <button id="btnXlsx" style="font-size:13px">⬇ Descargar diferencias (XLSX)</button>
+  </div>
+  <div class="leyenda">
+    <span style="background:var(--verde-bg);color:var(--verde)">verde = igual</span>
+    <span style="background:var(--rojo-bg);color:var(--rojo)">rojo = diferente</span>
+    <span style="background:#fafafa;color:#999">gris = vacío en ambas</span>
+  </div>
+  <div class="nota" id="notaOrden" hidden style="margin-bottom:8px">⚠ Sin columnas clave: las filas se aparearon por orden de aparición.</div>
+  <div class="scroll"><table class="res"><thead id="resHead"></thead><tbody id="resBody"></tbody></table></div>
+  <details id="detSoloA"><summary></summary><div class="scroll" style="max-height:40vh"><table class="solo" id="tblSoloA"></table></div></details>
+  <details id="detSoloB"><summary></summary><div class="scroll" style="max-height:40vh"><table class="solo" id="tblSoloB"></table></div></details>
+</section>
+
+</main>
+<footer>Comparador de Planillas · procesamiento 100% local (SheetJS) · las planillas nunca salen de tu navegador</footer>
+
+<script src="core.js"></script>
+<script>
+'use strict';
+const C = window.Comparador;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const state = { A:null, B:null, mapping:[], restored:false };
+
+// ---------- carga de archivos ----------
+function setupDrop(side){
+  const drop = $('drop'+side), input = $('file'+side);
+  drop.addEventListener('click', e => { if(e.target.closest('.fileopts')) return; input.click(); });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    if (e.dataTransfer.files.length) handleFile(side, e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if(input.files.length) handleFile(side, input.files[0]); });
+  $('sheet'+side).addEventListener('change', () => { state[side].sheetName = $('sheet'+side).value; loadSheet(side); });
+  $('hdr'+side).addEventListener('change', () => {
+    const v = parseInt($('hdr'+side).value,10);
+    if (v >= 1) { state[side].headerIdx = v-1; rebuildTable(side); }
+  });
+}
+setupDrop('A'); setupDrop('B');
+
+async function handleFile(side, file){
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf), { type:'array', cellDates:true });
+    state[side] = { wb, fileName:file.name, sheetName:wb.SheetNames[0] };
+    const sel = $('sheet'+side);
+    sel.innerHTML = wb.SheetNames.map(n => `<option>${esc(n)}</option>`).join('');
+    sel.parentElement.style.display = wb.SheetNames.length > 1 ? '' : 'none';
+    $('info'+side).textContent = '✔ ' + file.name;
+    $('opts'+side).hidden = false;
+    loadSheet(side);
+  } catch(err) {
+    alert('No se pudo leer el archivo: ' + err.message);
+  }
+}
+
+function loadSheet(side){
+  const s = state[side];
+  const ws = s.wb.Sheets[s.sheetName];
+  s.rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+  s.headerIdx = C.detectHeaderRow(s.rows);
+  $('hdr'+side).value = s.headerIdx + 1;
+  rebuildTable(side);
+}
+
+function rebuildTable(side){
+  const s = state[side];
+  s.table = C.extractTable(s.rows, s.headerIdx);
+  C.addVirtualNroComp(s.table);
+  $('dim'+side).textContent = s.table.data.length + ' filas × ' + s.table.cols.length + ' columnas';
+  if (state.A && state.A.table && state.B && state.B.table) initMapping();
+}
+
+// ---------- mapeo ----------
+function mappingSignature(){
+  const names = t => t.cols.map(c => c.name).join('\x1f');
+  let str = names(state.A.table) + '||' + names(state.B.table), h = 0;
+  for (let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i))|0; }
+  return 'comparador-map-' + (h>>>0).toString(36);
+}
+function saveMapping(){
+  try {
+    const data = state.mapping.map(m => ({
+      a: state.A.table.cols[m.ai].name, b: state.B.table.cols[m.bi].name, k: !!m.isKey }));
+    localStorage.setItem(mappingSignature(), JSON.stringify(data));
+  } catch(e){}
+}
+function loadSavedMapping(){
+  try {
+    const raw = localStorage.getItem(mappingSignature());
+    if (!raw) return null;
+    const data = JSON.parse(raw), out = [];
+    data.forEach(d => {
+      const ai = state.A.table.cols.findIndex(c => c.name === d.a);
+      const bi = state.B.table.cols.findIndex(c => c.name === d.b);
+      if (ai >= 0 && bi >= 0) out.push({ ai, bi, isKey: !!d.k });
+    });
+    return out.length ? out : null;
+  } catch(e){ return null; }
+}
+
+function initMapping(){
+  const auto = C.autoMap(state.A.table.cols, state.B.table.cols);
+  const saved = loadSavedMapping();
+  if (saved){ state.mapping = saved; state.restored = true; }
+  else { state.mapping = auto.map(m => ({...m})); state.restored = false; }
+  $('avisoRestaurado').hidden = !state.restored;
+  $('mapSection').hidden = false;
+  renderMapping();
+  $('resultSection').hidden = true;
+}
+
+function usarAuto(){
+  state.mapping = C.autoMap(state.A.table.cols, state.B.table.cols).map(m => ({...m}));
+  state.restored = false;
+  $('avisoRestaurado').hidden = true;
+  renderMapping(); maybeRecompare();
+}
+$('btnAuto').addEventListener('click', usarAuto);
+$('btnAuto2').addEventListener('click', usarAuto);
+
+function renderMapping(){
+  const colsA = state.A.table.cols, colsB = state.B.table.cols;
+  const rows = colsA.map((ca, ai) => {
+    const m = state.mapping.find(x => x.ai === ai);
+    const opts = ['<option value="-1">— no comparar —</option>'].concat(
+      colsB.map((cb, bi) =>
+        `<option value="${bi}" ${m && m.bi === bi ? 'selected':''}>${esc(cb.name)}${cb.virtual?' (calculada)':''}</option>`));
+    return `<tr>
+      <td>${esc(ca.name)}${ca.virtual?'<span class="badge-calc">calculada</span>':''}</td>
+      <td style="color:#999">↔</td>
+      <td><select data-ai="${ai}" class="${m?'mapped':''}">${opts.join('')}</select></td>
+      <td style="text-align:center"><input type="checkbox" data-key="${ai}" ${m&&m.isKey?'checked':''} ${m?'':'disabled'}></td>
+    </tr>`;
+  });
+  $('mapBody').innerHTML = rows.join('');
+  $('mapBody').querySelectorAll('select').forEach(sel => sel.addEventListener('change', onMapChange));
+  $('mapBody').querySelectorAll('input[data-key]').forEach(ch => ch.addEventListener('change', onKeyChange));
+  const unused = colsB.filter((c, bi) => !state.mapping.some(m => m.bi === bi));
+  $('chipsB').innerHTML = unused.length
+    ? '<b>Columnas de B que quedan fuera de la comparación:</b> ' + unused.map(c => `<span class="chip">${esc(c.name)}</span>`).join('')
+    : '<b>Todas las columnas de B están mapeadas.</b>';
+  $('btnComparar').disabled = state.mapping.length === 0;
+}
+
+function onMapChange(e){
+  const ai = +e.target.dataset.ai, bi = +e.target.value;
+  const prev = state.mapping.find(x => x.ai === ai);
+  const wasKey = prev ? prev.isKey : false;
+  state.mapping = state.mapping.filter(m => m.ai !== ai && (bi < 0 || m.bi !== bi));
+  if (bi >= 0) state.mapping.push({ ai, bi, isKey: wasKey });
+  state.mapping.sort((a,b) => a.ai - b.ai);
+  renderMapping(); maybeRecompare();
+}
+function onKeyChange(e){
+  const ai = +e.target.dataset.key;
+  const m = state.mapping.find(x => x.ai === ai);
+  if (m) m.isKey = e.target.checked;
+  maybeRecompare();
+}
+$('tol').addEventListener('change', maybeRecompare);
+
+function maybeRecompare(){
+  if (!$('resultSection').hidden) comparar();
+}
+
+// ---------- comparación y render de resultados ----------
+$('btnComparar').addEventListener('click', comparar);
+
+function comparar(){
+  saveMapping();
+  const tol = parseFloat($('tol').value);
+  const res = C.compareTables(state.A.table, state.B.table, state.mapping,
+    { tolerance: isFinite(tol) ? tol : 0.01 });
+  state.result = res;
+  renderResults(res);
+  $('resultSection').hidden = false;
+}
+
+function renderResults(res){
+  const colsA = state.A.table.cols, colsB = state.B.table.cols;
+  const nOk = res.rows.filter(r => r.diffs === 0).length;
+  const nDif = res.rows.length - nOk;
+  $('cards').innerHTML = `
+    <div class="card total"><div class="n">${res.rows.length}</div><div class="l">filas apareadas</div></div>
+    <div class="card okc"><div class="n">${nOk}</div><div class="l">sin diferencias</div></div>
+    <div class="card difc"><div class="n">${nDif}</div><div class="l">con diferencias</div></div>
+    <div class="card soloa"><div class="n">${res.onlyA.length}</div><div class="l">sólo en A</div></div>
+    <div class="card solob"><div class="n">${res.onlyB.length}</div><div class="l">sólo en B</div></div>`;
+  $('notaOrden').hidden = !res.useRowOrder;
+
+  const ths = state.mapping.map((m, ci) => {
+    const a = colsA[m.ai].name, b = colsB[m.bi].name;
+    const badge = res.colDiffs[ci] ? `<span class="bd">${res.colDiffs[ci]}</span>` : '';
+    return `<th>${m.isKey ? '🔑 ' : ''}<span class="hA">${esc(a)}</span>${badge}${
+      C.normHeader(a) !== C.normHeader(b) ? `<div class="hB">${esc(b)}</div>` : ''}</th>`;
+  });
+  $('resHead').innerHTML = `<tr><th>Fila A</th><th>Fila B</th>${ths.join('')}</tr>`;
+
+  const body = res.rows.map(r => {
+    const tds = r.cells.map(c => {
+      if (c.kind === 'empty') return '<td class="c-empty">—</td>';
+      if (c.equal) return `<td class="c-eq">${esc(C.formatValue(c.a) || C.formatValue(c.b))}</td>`;
+      return `<td class="c-diff"><span class="tagA">A</span>${esc(C.formatValue(c.a)) || '<i>vacío</i>'}<br><span class="tagB">B</span>${esc(C.formatValue(c.b)) || '<i>vacío</i>'}</td>`;
+    });
+    return `<tr class="${r.diffs ? 'fila-dif' : 'fila-ok'}"><td class="fila">${r.ra.excelRow}</td><td class="fila">${r.rb.excelRow}</td>${tds.join('')}</tr>`;
+  });
+  $('resBody').innerHTML = body.join('');
+
+  renderSolo('A', res.onlyA, colsA, state.mapping.map(m => m.ai));
+  renderSolo('B', res.onlyB, colsB, state.mapping.map(m => m.bi));
+}
+
+function renderSolo(side, rows, cols, idxs){
+  const det = $('detSolo'+side);
+  const otro = side === 'A' ? 'B' : 'A';
+  det.style.display = rows.length ? '' : 'none';
+  det.querySelector('summary').textContent =
+    `Sólo en ${side} (${rows.length}) — filas de "${state[side].fileName}" sin correspondencia en ${otro}`;
+  const head = '<tr><th>Fila</th>' + idxs.map(i => `<th>${esc(cols[i].name)}</th>`).join('') + '</tr>';
+  const body = rows.map(r =>
+    `<tr><td>${r.excelRow}</td>${idxs.map(i => `<td>${esc(C.formatValue(r.values[i]))}</td>`).join('')}</tr>`).join('');
+  $('tblSolo'+side).innerHTML = head + body;
+}
+
+$('chkSoloDifs').addEventListener('change', e => {
+  document.body.classList.toggle('solo-difs', e.target.checked);
+});
+
+// ---------- exportar XLSX ----------
+// valor "tipado" para Excel: fechas como fecha, números como número
+function exportVal(v){
+  if (C.isBlank(v)) return null;
+  if (v instanceof Date || typeof v === 'number') return v;
+  const d = C.parseDateSmart(v);
+  if (d) return new Date(d + 'T00:00:00');
+  const n = C.parseNumberSmart(v);
+  if (n !== null) return n;
+  return String(v);
+}
+$('btnXlsx').addEventListener('click', () => {
+  if (!state.result) return;
+  const colsA = state.A.table.cols, colsB = state.B.table.cols;
+  const wb = XLSX.utils.book_new();
+
+  const difs = [['Fila A','Fila B','Columna A','Columna B','Valor A','Valor B']];
+  state.result.rows.forEach(r => {
+    r.cells.forEach((c, ci) => {
+      if (!c.equal) difs.push([
+        r.ra.excelRow, r.rb.excelRow,
+        colsA[state.mapping[ci].ai].name, colsB[state.mapping[ci].bi].name,
+        exportVal(c.a), exportVal(c.b)
+      ]);
+    });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(difs, {cellDates:true}), 'Diferencias');
+
+  const soloSheet = (rows, cols, idxs) => {
+    const aoa = [['Fila'].concat(idxs.map(i => cols[i].name))];
+    rows.forEach(r => aoa.push([r.excelRow].concat(idxs.map(i => exportVal(r.values[i])))));
+    return XLSX.utils.aoa_to_sheet(aoa, {cellDates:true});
+  };
+  if (state.result.onlyA.length)
+    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyA, colsA, state.mapping.map(m => m.ai)), 'Sólo en A');
+  if (state.result.onlyB.length)
+    XLSX.utils.book_append_sheet(wb, soloSheet(state.result.onlyB, colsB, state.mapping.map(m => m.bi)), 'Sólo en B');
+
+  XLSX.writeFile(wb, 'diferencias.xlsx', { cellDates:true });
+});
+
+// expuesto para pruebas automatizadas
+window.__app = { state, handleFile, comparar };
+</script>
+</body>
+</html>

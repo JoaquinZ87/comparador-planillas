@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cómo usar el Comparador de Planillas</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;background:#f6f8fa;color:#202124;line-height:1.55}
+  .hoja{max-width:820px;margin:0 auto;padding:28px 26px 60px;background:#fff;min-height:100vh}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:#5f6368;font-size:14px;margin-bottom:6px}
+  .btn-app{display:inline-block;background:#1a5cb0;color:#fff;text-decoration:none;font-weight:600;border-radius:8px;padding:9px 20px;margin:10px 0 4px}
+  .priv{background:#e6f4ea;color:#137333;border-radius:8px;padding:10px 14px;font-size:14px;margin:14px 0 6px}
+  h2{font-size:19px;margin:34px 0 6px;border-bottom:2px solid #e8eaed;padding-bottom:6px}
+  h2 .n{display:inline-block;background:#1a5cb0;color:#fff;border-radius:50%;width:26px;height:26px;text-align:center;line-height:26px;font-size:14px;margin-right:8px}
+  p{margin:8px 0;font-size:15px}
+  img{max-width:100%;border:1px solid #dadce0;border-radius:8px;margin:10px 0;display:block}
+  img.chica{max-width:420px}
+  ul{font-size:15px;margin:6px 0;padding-left:22px}
+  li{margin:4px 0}
+  .tip{background:#fef7e0;border-radius:8px;padding:8px 14px;font-size:14px;margin:10px 0}
+  .verde{color:#137333;font-weight:600}
+  .rojo{color:#c5221f;font-weight:600}
+  .kbd{background:#f1f3f4;border:1px solid #dadce0;border-radius:5px;padding:0 7px;font-weight:700}
+  footer{color:#5f6368;font-size:12px;margin-top:44px;border-top:1px solid #e8eaed;padding-top:12px}
+  @media print{ body{background:#fff} .hoja{max-width:100%;padding:0} .btn-app{display:none} h2{break-after:avoid} img{break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="hoja">
+
+<h1>📊 Comparador de Planillas</h1>
+<div class="sub">Instructivo — compará "Mis Comprobantes" de ARCA contra las compras de tu sistema contable</div>
+<a class="btn-app" href="./index.html">▶ Abrir el Comparador</a>
+<div class="priv">🔒 <b>Tus datos no salen de tu computadora.</b> Aunque la página está en internet, las planillas se procesan en tu propio navegador: no se suben a ningún servidor.</div>
+
+<h2><span class="n">1</span>Cargá los dos archivos</h2>
+<p>Arrastrá (o hacé clic para elegir) el Excel de ARCA en <b>Planilla A</b> y el de tu sistema contable en <b>Planilla B</b>. El programa detecta solo dónde empiezan los datos, aunque el archivo tenga títulos arriba.</p>
+<img src="img/1-cargar.png" alt="Paso 1: dos recuadros para arrastrar los archivos">
+
+<h2><span class="n">2</span>Mirá lo que el programa armó solo</h2>
+<p><b>El número de comprobante:</b> cada sistema lo guarda distinto (ARCA separa punto de venta y número; los sistemas contables suelen pegarlos en un solo dato). El programa prueba las formas posibles de leerlo, elige la que <b>más coincidencias</b> produce y te lo muestra con ejemplos reales. Si no es la correcta, tocá otra opción.</p>
+<img src="img/2-tarjeta.png" alt="Tarjeta con las lecturas posibles del número de comprobante">
+<p><b>Las columnas que se comparan:</b> las de cada planilla aparecen enfrentadas, y las que se van a comparar están <b>unidas por una línea</b>.</p>
+<img src="img/3-mapa.png" alt="Dos listas de columnas conectadas por líneas">
+<ul>
+  <li>¿Sobra un par? Tocá la <b>✕</b> de la línea y deja de compararse.</li>
+  <li>¿Faltó unir dos columnas? Tocá una <b>gris</b> de cada lado y quedan unidas.</li>
+</ul>
+
+<h2><span class="n">3</span>Compará</h2>
+<p>Apretá <span class="kbd">Comparar ▶</span>. Cada comprobante de una planilla se aparea con el de la otra (por CUIT + número), y cada dato se pinta: <span class="verde">verde = igual</span>, <span class="rojo">rojo = diferente</span> (muestra los dos valores). Arriba tenés el resumen: cuántos coinciden, cuántos tienen diferencias, y cuáles están <b>sólo en una</b> de las dos planillas.</p>
+<img src="img/4-resultados.png" alt="Resultados: resumen, sugerencias y tabla verde/rojo">
+
+<h2><span class="n">4</span>¿Está escrito distinto pero es lo mismo?</h2>
+<p>Pasa todo el tiempo: <i>"83 - Tique"</i> vs <i>"TICKET"</i>, <i>"DISTRIBUIDORA EL SOL S.A."</i> vs <i>"DIST EL SOL SA"</i>. Tocá el botón <b>≈</b> de la celda roja:</p>
+<img src="img/5-boton-equiv.png" alt="Celda roja con el botón de equivalencia" class="chica">
+<p>…y todas las filas con ese par se ponen verdes, marcadas con ≈:</p>
+<img src="img/7-equiv-verde.png" alt="Celdas verdes con la equivalencia aplicada" class="chica">
+<p>Además, el panel <b>"≈ Equivalencias"</b> te sugiere solo los pares que parecen ser lo mismo, para aceptarlos de a uno o todos juntos. Todo queda <b>memorizado</b>: el mes que viene salen verdes sin hacer nada.</p>
+
+<h2><span class="n">5</span>Descargá el resultado en Excel</h2>
+<p>El botón <span class="kbd">⬇ Descargar diferencias (XLSX)</span> genera un Excel con los mismos colores: hojas <b>Resumen</b>, <b>Comparación</b> (verde/rojo), <b>Diferencias</b> (lista filtrable), <b>Sólo en A</b> y <b>Sólo en B</b>.</p>
+<img src="img/8-descargar.png" alt="Botón de descarga del Excel" class="chica">
+
+<div class="tip">🧪 <b>¿Querés probar sin tus datos?</b> Bajate los archivos de ejemplo (los de estas capturas) y cargalos:
+<a href="ejemplos/ejemplo%20ARCA%20Mis%20Comprobantes.xlsx">planilla A (ARCA)</a> ·
+<a href="ejemplos/ejemplo%20Compras%20segun%20contabilidad.xlsx">planilla B (contabilidad)</a> ·
+<a href="instructivo.pdf">este instructivo en PDF</a></div>
+
+<div class="tip">💡 <b>Tips</b><br>
+· Todo lo que ajustes (pares de columnas, lecturas del número, equivalencias) queda guardado en tu navegador y se aplica solo la próxima vez.<br>
+· Si algo quedó raro, el botón <b>"Rehacer propuesta automática"</b> vuelve a empezar.<br>
+· Sirve para cualquier par de planillas de comprobantes, no sólo ARCA: la lógica se adapta a las columnas que encuentre.</div>
+
+<footer>Comparador de Planillas · <a href="./index.html">joaquinz87.github.io/comparador-planillas</a> · las capturas usan datos de ejemplo inventados</footer>
+</div>
+</body>
+</html>

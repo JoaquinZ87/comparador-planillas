@@ -31,6 +31,7 @@
   .drop input[type=file]{display:none}
   .fileopts{display:flex;gap:14px;justify-content:center;align-items:center;margin-top:10px;font-size:12px;color:var(--gris);flex-wrap:wrap}
   .fileopts select,.fileopts input{font-size:12px;padding:2px 4px;border:1px solid var(--borde);border-radius:4px;max-width:150px}
+  .fileopts[hidden]{display:none}
   .mapa{display:grid;grid-template-columns:minmax(190px,1fr) 120px minmax(190px,1fr);max-width:820px;align-items:center}
   .mapa .cab{font-weight:700;font-size:12px;color:var(--gris);padding:6px 6px 2px}
   .mapa .seccion{grid-column:1/4;font-size:12px;color:var(--gris);font-weight:600;padding:14px 4px 2px;border-bottom:1px dashed var(--borde);margin-bottom:4px}
@@ -127,7 +128,7 @@
 <body>
 <header>
   <h1>📊 Comparador de Planillas</h1>
-  <p>Compará "Mis Comprobantes" de ARCA contra tu sistema contable. Los archivos se procesan <b>localmente en tu navegador</b>: no se suben a ningún servidor.</p>
+  <p>Compará "Mis Comprobantes" de ARCA contra tu sistema contable. Los archivos se procesan <b>localmente en tu navegador</b>: no se suben a ningún servidor. · <a href="instructivo.html" style="color:#1a5cb0;font-weight:600">📖 ¿Cómo se usa?</a></p>
 </header>
 <main>
 

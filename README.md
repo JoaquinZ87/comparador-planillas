@@ -16,13 +16,21 @@ compras de un **sistema contable**, celda por celda.
   planillas nunca se suben a ningún servidor).
 - Detección automática de la fila de encabezados (ignora títulos).
 - **Propuesta automática de mapeo de columnas**, editable con selectores.
-- Selector **"Comparar como"** por cada par de columnas: automático, últimos 8
-  dígitos (nro. de comprobante), sólo dígitos (CUIT), número, fecha o texto.
-  Con *últimos 8 dígitos*, `1234` coincide con `0005-00001234` y con
-  `50000001234` (punto de venta + relleno variable), sirva la planilla que sirva.
-  La propuesta automática la sugiere por nombre de columna y también analizando
-  los datos (si dos columnas de identificadores sólo coinciden normalizadas).
-- Apareo de filas por columnas clave (por defecto CUIT + Nro. de comprobante).
+- Tarjeta **"Nº de comprobante"**: cada planilla puede guardar el número
+  distinto (PV y Nº en columnas separadas, todo pegado en un dato como
+  `1100167743`, con guion como `0011-00167743`). El programa genera las
+  lecturas posibles, las evalúa contra los datos y **elige la que más
+  coincidencias produce**, mostrando cada opción con un ejemplo real y su
+  cantidad de coincidencias, para que el usuario entienda y pueda cambiarla.
+- Apareo de filas por CUIT + Nº de comprobante leído; el número se muestra
+  siempre en formato canónico AFIP (`00011-00167743`).
+- **Equivalencias de valores**: cuando dos planillas escriben lo mismo distinto
+  (`83 - Tique` vs `TICKET`, `LAKAUT S.A.` vs `LAKAUT SA`), un clic en el botón
+  ≈ de la celda roja los declara equivalentes: se aplica a todas las filas y se
+  recuerda para futuras comparaciones. Un panel sugiere automáticamente los
+  pares que aparecen consistentemente juntos, para aceptarlos de a uno o todos.
+- Selector avanzado **"Comparar como"** por cada par de columnas: automático,
+  últimos 8 dígitos, sólo dígitos (CUIT), número, fecha o texto.
 - Resultado con celdas en **verde** (iguales) y **rojo** (diferentes); las
   columnas sin mapear quedan fuera de la comparación.
 - Secciones "Sólo en A" / "Sólo en B" y exportación de diferencias a XLSX

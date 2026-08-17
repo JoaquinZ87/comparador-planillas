@@ -109,7 +109,21 @@
   }
 
   // ---------- comparación de valores ----------
-  function compareValues(a, b, tol, transform) {
+  // Par canónico estable de dos valores, para registrar equivalencias
+  // definidas por el usuario ("83 - Tique" ≈ "TICKET").
+  function equivKey(a, b) {
+    return keyPart(a) + '\u001f' + keyPart(b);
+  }
+
+  function compareValues(a, b, tol, transform, equivSet) {
+    const r = compareValuesBase(a, b, tol, transform);
+    if (!r.equal && equivSet && equivSet.has(equivKey(a, b))) {
+      return { equal: true, kind: 'equiv' };
+    }
+    return r;
+  }
+
+  function compareValuesBase(a, b, tol, transform) {
     tol = tol === undefined ? 0.01 : tol;
     const aB = isBlank(a), bB = isBlank(b);
     if (aB && bB) return { equal: true, kind: 'empty' };
@@ -315,18 +329,196 @@
     return mapping;
   }
 
+  // ---------- nº de comprobante: lecturas posibles ----------
+  const digitsOf = function (v) { return String(v).replace(/\D/g, ''); };
+  const last8 = function (v) {
+    const dg = digitsOf(v);
+    return dg ? parseInt(dg.slice(-8), 10) : null;
+  };
+
+  // Detecta las columnas relevantes para el apareo: nº comprobante, PV y CUIT.
+  function detectarColumnasComprobante(table) {
+    const buscar = function (pred) {
+      for (let i = 0; i < table.cols.length; i++) if (pred(table.cols[i].name, i)) return i;
+      return -1;
+    };
+    const esGrupo = function (miembro) {
+      return function (name) {
+        const g = groupOf(name);
+        return !!(g && g.names.indexOf(miembro) >= 0);
+      };
+    };
+    const num = buscar(esGrupo('nro'));
+    const pv = buscar(function (name) { return /^(puntodeventa|ptovta|ptodeventa|pv)$/.test(normHeader(name)); });
+    let cuit = buscar(esGrupo('cuit'));
+    if (cuit < 0) {
+      // por datos: columna con mayoría de valores de 11 dígitos
+      cuit = buscar(function (name, i) {
+        let ok = 0, tot = 0;
+        for (let r = 0; r < Math.min(table.data.length, 200); r++) {
+          const v = table.data[r].values[i];
+          if (isBlank(v)) continue;
+          tot++;
+          if (digitsOf(v).length === 11) ok++;
+        }
+        return tot >= 5 && ok >= tot * 0.8;
+      });
+    }
+    return { num: num, pv: pv, cuit: cuit };
+  }
+
+  // Formas posibles de leer el nº según la estructura de la(s) columna(s).
+  // Cada opción: {id, label, desc, tienePV, leer(row) -> {pv, num}}
+  function opcionesNro(table, colNum, colPV) {
+    if (colNum < 0) return [];
+    let conSep = 0, largos = 0, tot = 0;
+    for (let r = 0; r < Math.min(table.data.length, 300); r++) {
+      const v = table.data[r].values[colNum];
+      if (isBlank(v)) continue;
+      tot++;
+      if (/^\s*\d+\s*[-\/ ]\s*\d+\s*$/.test(String(v))) conSep++;
+      if (digitsOf(v).length > 8) largos++;
+    }
+    const ops = [];
+    if (colPV >= 0) {
+      ops.push({
+        id: 'pv-sep', tienePV: true,
+        label: 'Punto de venta y Nº en columnas separadas',
+        desc: 'uso ambas columnas',
+        leer: function (row) {
+          const pv = parseNumberSmart(row.values[colPV]);
+          return { pv: pv === null ? null : pv, num: last8(row.values[colNum]) };
+        }
+      });
+      ops.push({
+        id: 'solo-num', tienePV: false,
+        label: 'Sólo el Nº, ignorar el punto de venta',
+        desc: 'comparo únicamente el número',
+        leer: function (row) { return { pv: null, num: last8(row.values[colNum]) }; }
+      });
+    } else if (tot && conSep >= tot * 0.6) {
+      ops.push({
+        id: 'sep', tienePV: true,
+        label: 'PV y Nº separados por guion o espacio',
+        desc: 'divido el dato en punto de venta + número',
+        leer: function (row) {
+          const m = String(row.values[colNum] === null ? '' : row.values[colNum]).match(/^\s*(\d+)\s*[-\/ ]\s*(\d+)\s*$/);
+          if (!m) return { pv: null, num: last8(row.values[colNum]) };
+          return { pv: parseInt(m[1], 10), num: parseInt(m[2].slice(-8), 10) };
+        }
+      });
+      ops.push({
+        id: 'ultimos8', tienePV: false,
+        label: 'Sólo los últimos 8 dígitos como Nº',
+        desc: 'ignoro lo que haya antes',
+        leer: function (row) { return { pv: null, num: last8(row.values[colNum]) }; }
+      });
+    } else if (tot && largos >= tot * 0.5) {
+      ops.push({
+        id: 'pegados', tienePV: false,
+        label: 'PV + número pegados en un solo dato',
+        desc: 'tomo los últimos 8 dígitos como Nº',
+        leer: function (row) { return { pv: null, num: last8(row.values[colNum]) }; }
+      });
+      ops.push({
+        id: 'talcual', tienePV: false,
+        label: 'Número completo tal cual',
+        desc: 'no le saco nada',
+        leer: function (row) {
+          const dg = digitsOf(row.values[colNum]);
+          return { pv: null, num: dg ? parseInt(dg, 10) : null };
+        }
+      });
+    } else {
+      ops.push({
+        id: 'talcual', tienePV: false,
+        label: 'El número, tal cual está',
+        desc: '',
+        leer: function (row) { return { pv: null, num: last8(row.values[colNum]) }; }
+      });
+    }
+    return ops;
+  }
+
+  // "00011-00167743" (formato AFIP) o "00167743" si el PV no se conoce.
+  function formatComprobante(c) {
+    if (!c || c.num === null || c.num === undefined) return '';
+    const num8 = String(c.num).padStart(8, '0');
+    if (c.pv === null || c.pv === undefined) return num8;
+    return String(c.pv).padStart(5, '0') + '-' + num8;
+  }
+
+  // Ejemplo legible de una opción usando la primera fila real con dato.
+  function ejemploOpcion(table, colNum, colPV, op) {
+    for (let r = 0; r < table.data.length; r++) {
+      const row = table.data[r];
+      if (isBlank(row.values[colNum])) continue;
+      const lect = op.leer(row);
+      if (lect.num === null) continue;
+      const crudo = op.tienePV && colPV >= 0
+        ? String(row.values[colPV]).trim() + ' y ' + String(row.values[colNum]).trim()
+        : String(row.values[colNum]).trim();
+      return crudo + ' → ' + formatComprobante(lect);
+    }
+    return '';
+  }
+
+  // Cuenta cuántos comprobantes coincidirían con cada combinación de lecturas.
+  // Clave = CUIT + Nº (el PV entra sólo si ambas lecturas lo tienen).
+  function evaluarCombinaciones(tableA, tableB, cuitA, cuitB, opsA, opsB) {
+    const claves = function (table, cuitIdx, op, conPV) {
+      const m = new Map();
+      table.data.forEach(function (row) {
+        const lect = op.leer(row);
+        if (lect.num === null) return;
+        const cu = cuitIdx >= 0 ? keyPart(row.values[cuitIdx]) : '';
+        const k = cu + '|' + (conPV ? lect.pv + '-' + lect.num : String(lect.num));
+        m.set(k, (m.get(k) || 0) + 1);
+      });
+      return m;
+    };
+    const conteos = opsA.map(function () { return opsB.map(function () { return 0; }); });
+    let mejor = { ia: 0, ib: 0, conteo: -1 };
+    opsA.forEach(function (oa, ia) {
+      opsB.forEach(function (ob, ib) {
+        const conPV = oa.tienePV && ob.tienePV;
+        const ka = claves(tableA, cuitA, oa, conPV);
+        const kb = claves(tableB, cuitB, ob, conPV);
+        let c = 0;
+        ka.forEach(function (na, k) { const nb = kb.get(k); if (nb) c += Math.min(na, nb); });
+        conteos[ia][ib] = c;
+        if (c > mejor.conteo) mejor = { ia: ia, ib: ib, conteo: c };
+      });
+    });
+    return { conteos: conteos, mejor: mejor };
+  }
+
   // ---------- comparación de tablas ----------
   function compareTables(tableA, tableB, mapping, opts) {
     opts = opts || {};
     const tol = opts.tolerance === undefined ? 0.01 : opts.tolerance;
+    // modo tarjeta: la clave la definen el CUIT + la lectura del nº de comprobante
+    const nro = opts.claveNro || null;   // {leerA, leerB, ambosPV}
+    const cuit = opts.claveCuit || null; // {a: idx|-1, b: idx|-1}
+    const cardMode = !!(nro || (cuit && (cuit.a >= 0 || cuit.b >= 0)));
     const keyPairs = mapping.filter(function (m) { return m.isKey; });
-    const useRowOrder = keyPairs.length === 0;
+    const useRowOrder = !cardMode && keyPairs.length === 0;
     const buildKey = function (row, side) {
+      if (cardMode) {
+        const cu = cuit && (side === 'A' ? cuit.a : cuit.b) >= 0
+          ? keyPart(row.values[side === 'A' ? cuit.a : cuit.b]) : '';
+        let nk = '';
+        if (nro) {
+          const lect = (side === 'A' ? nro.leerA : nro.leerB)(row);
+          if (lect.num !== null) nk = nro.ambosPV ? lect.pv + '-' + lect.num : String(lect.num);
+        }
+        return cu + '|' + nk;
+      }
       return keyPairs.map(function (m) {
         return keyPart(row.values[side === 'A' ? m.ai : m.bi], m.transform);
       }).join('|');
     };
-    const emptyKey = function (k) { return k.replace(/\|/g, '') === ''; };
+    const emptyKey = function (k) { return k.replace(/[|\-]/g, '') === ''; };
 
     const pairs = [], onlyA = [], onlyB = [];
     if (useRowOrder) {
@@ -360,20 +552,63 @@
     const rows = pairs.map(function (p) {
       const cells = mapping.map(function (m) {
         const a = p.ra.values[m.ai], b = p.rb.values[m.bi];
-        const res = compareValues(a, b, tol, m.transform);
+        const res = compareValues(a, b, tol, m.transform, m.equivSet);
         return { a: a, b: b, equal: res.equal, kind: res.kind };
       });
-      return {
+      const row = {
         key: p.key, ra: p.ra, rb: p.rb, cells: cells,
         diffs: cells.filter(function (c) { return !c.equal; }).length
       };
+      if (nro) {
+        const ca = nro.leerA(p.ra), cb = nro.leerB(p.rb);
+        const equal = ca.num !== null && cb.num !== null && ca.num === cb.num &&
+          (!nro.ambosPV || String(ca.pv) === String(cb.pv));
+        row.comp = { a: ca, b: cb, equal: equal };
+        if (!equal) row.diffs++;
+      }
+      return row;
     });
 
     const colDiffs = mapping.map(function (m, ci) {
       return rows.filter(function (r) { return !r.cells[ci].equal; }).length;
     });
+    const compDiffs = nro ? rows.filter(function (r) { return r.comp && !r.comp.equal; }).length : 0;
 
-    return { rows: rows, onlyA: onlyA, onlyB: onlyB, colDiffs: colDiffs, useRowOrder: useRowOrder };
+    return { rows: rows, onlyA: onlyA, onlyB: onlyB, colDiffs: colDiffs,
+      compDiffs: compDiffs, useRowOrder: useRowOrder, cardMode: cardMode };
+  }
+
+  // ---------- sugerencias de equivalencias ----------
+  // Entre las filas apareadas, busca pares de valores distintos que aparecen
+  // consistentemente juntos (o muy parecidos): candidatos a "son lo mismo".
+  function sugerirEquivalencias(res, mapping) {
+    const sugerencias = [];
+    mapping.forEach(function (m, ci) {
+      const porPar = new Map();   // equivKey -> {count, a, b, ka, kb}
+      const totalA = new Map();   // keyPart(a) -> cuántas veces aparece en rojos de esta columna
+      const totalB = new Map();
+      res.rows.forEach(function (r) {
+        const c = r.cells[ci];
+        if (c.equal || isBlank(c.a) || isBlank(c.b)) return;
+        const ka = keyPart(c.a), kb = keyPart(c.b);
+        const ek = ka + '\u001f' + kb;
+        if (!porPar.has(ek)) porPar.set(ek, { count: 0, a: c.a, b: c.b, ka: ka, kb: kb });
+        porPar.get(ek).count++;
+        totalA.set(ka, (totalA.get(ka) || 0) + 1);
+        totalB.set(kb, (totalB.get(kb) || 0) + 1);
+      });
+      porPar.forEach(function (p, ek) {
+        const exclusivo = p.count >= 2 &&
+          totalA.get(p.ka) === p.count && totalB.get(p.kb) === p.count;
+        const sim = diceSim(normText(p.a), normText(p.b));
+        if (exclusivo || (p.count >= 2 && sim >= 0.6) || sim >= 0.75) {
+          sugerencias.push({ ci: ci, a: p.a, b: p.b, ka: p.ka, kb: p.kb,
+            count: p.count, sim: sim, exclusivo: exclusivo });
+        }
+      });
+    });
+    sugerencias.sort(function (x, y) { return y.count - x.count || y.sim - x.sim; });
+    return sugerencias;
   }
 
   // ---------- formato para mostrar ----------
@@ -394,6 +629,10 @@
     TRANSFORMS: TRANSFORMS, transformValue: transformValue,
     detectHeaderRow: detectHeaderRow, extractTable: extractTable,
     autoMap: autoMap, suggestTransforms: suggestTransforms, groupOf: groupOf,
+    detectarColumnasComprobante: detectarColumnasComprobante, opcionesNro: opcionesNro,
+    formatComprobante: formatComprobante, ejemploOpcion: ejemploOpcion,
+    evaluarCombinaciones: evaluarCombinaciones,
+    equivKey: equivKey, sugerirEquivalencias: sugerirEquivalencias,
     compareTables: compareTables, formatValue: formatValue, diceSim: diceSim
   };
 
